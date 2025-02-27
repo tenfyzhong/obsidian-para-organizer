@@ -6,3 +6,46 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+
+.command-table-header {
+    display: flex;
+    padding: 0;
+    margin-left: 24px;
+    gap: 15px;
+}
+
+.setting-header-name {
+    width: 200px;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.setting-item-control {
+    display: flex;
+    padding: 0;
+    margin-left: 24px;
+    gap: 15px;
+}
+
+.setting-item-control input {
+    width: 200px;
+}
+
+/* Adjust delete button position */
+.setting-item-control button {
+    margin-left: auto;
+}
+
+.command-config-title {
+    margin-bottom: 8px;
+}
+
+.command-config-desc {
+    margin-bottom: 12px;
+}
+
+.command-desc-item {
+    margin: 2px 0;
+    font-size: 13px;
+    color: var(--text-muted);
+}
