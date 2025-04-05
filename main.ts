@@ -1,4 +1,4 @@
-import { App, Plugin, TFolder, TFile, FuzzySuggestModal, Notice } from 'obsidian';
+import { App, Plugin, TFolder, TFile, FuzzySuggestModal, Notice, Modal } from 'obsidian';
 import { FileOrganizerSettings, FileOrganizerSettingTab, DEFAULT_SETTINGS, CommandConfig } from './settings';
 import { parse, stringify } from 'yaml';
 
@@ -14,6 +14,7 @@ export default class FileOrganizerPlugin extends Plugin {
 		this.registerCommands();
 
 		// Only register archive commands when enabled
+		// Only register archive commands when enabled
 		if (this.settings.enableArchive) {
 			this.addCommand({
 				id: 'archive-file',
@@ -26,9 +27,26 @@ export default class FileOrganizerPlugin extends Plugin {
 				name: 'Unarchive current file',
 				callback: () => this.handleUnarchive()
 			});
+
+			// Add command to archive entire folder
+			this.addCommand({
+				id: 'archive-folder',
+				name: 'Archive folder',
+				callback: () => this.handleArchiveFolder()
+			});
 		}
 	}
 
+	private async archiveFile(archivePath: string, file: TFile) {
+		// Ensure target directory exists
+		await this.ensureDirectory(archivePath);
+
+		// Move file
+		await this.app.fileManager.renameFile(file, archivePath);
+
+		// Update tags
+		await this.updateArchiveTag(file, true);
+	}
 	async handleArchive() {
 		const file = this.app.workspace.getActiveFile();
 		if (!file) {
@@ -40,14 +58,7 @@ export default class FileOrganizerPlugin extends Plugin {
 		const relativePath = file.path;
 		const archivePath = `${this.settings.archiveDir}/${relativePath}`;
 
-		// Ensure target directory exists
-		await this.ensureDirectory(archivePath);
-
-		// Move file
-		await this.app.fileManager.renameFile(file, archivePath);
-
-		// Update tags
-		await this.updateArchiveTag(file, true);
+		await this.archiveFile(archivePath, file);
 	}
 
 	async handleUnarchive() {
@@ -74,6 +85,83 @@ export default class FileOrganizerPlugin extends Plugin {
 
 		// Update tags
 		await this.updateArchiveTag(file, false);
+	}
+
+	async handleArchiveFolder() {
+		// Open folder selection modal
+		new FolderSelectionModal(this.app, this.app.vault.getRoot() as TFolder, async (selectedFolder) => {
+			// Confirm user selection
+			const confirmed = await this.confirmArchiveFolder(selectedFolder);
+			console.log("confirm", confirmed);
+			if (!confirmed) return;
+
+			// Get all files in the folder
+			const files = this.getAllFilesInFolder(selectedFolder);
+
+			if (files.length === 0) {
+				new Notice('No files found in the selected folder');
+				return;
+			}
+
+			// Show progress notification
+			new Notice(`Archiving ${files.length} files...`);
+
+			// Archive each file
+			let successCount = 0;
+			for (const file of files) {
+				try {
+					// Get relative path
+					const relativePath = file.path;
+					const archivePath = `${this.settings.archiveDir}/${relativePath}`;
+
+					// Ensure target directory exists
+					await this.ensureDirectory(archivePath);
+
+					// Move file
+					await this.app.fileManager.renameFile(file, archivePath);
+
+					// Update tags
+					await this.updateArchiveTag(file, true);
+
+					successCount++;
+				} catch (error) {
+					console.error(`Failed to archive file ${file.path}:`, error);
+				}
+			}
+
+			new Notice(`Successfully archived ${successCount} of ${files.length} files`);
+		}).open();
+	}
+
+	private async confirmArchiveFolder(folder: TFolder): Promise<boolean> {
+		return new Promise((resolve) => {
+			const modal = new ConfirmationModal(
+				this.app,
+				`Archive all files in "${folder.path}"?`,
+				"This will move all files to the archive directory. This action cannot be easily undone.",
+				"Archive",
+				(result) => resolve(result)
+			);
+			modal.open();
+		});
+	}
+
+	private getAllFilesInFolder(folder: TFolder): TFile[] {
+		const files: TFile[] = [];
+
+		// Recursively get all files
+		const collectFiles = (currentFolder: TFolder) => {
+			currentFolder.children.forEach(child => {
+				if (child instanceof TFile) {
+					files.push(child);
+				} else if (child instanceof TFolder) {
+					collectFiles(child);
+				}
+			});
+		};
+
+		collectFiles(folder);
+		return files;
 	}
 
 	private async ensureDirectory(filePath: string) {
@@ -245,5 +333,56 @@ class FolderSelectionModal extends FuzzySuggestModal<TFolder> {
 
 	onChooseItem(folder: TFolder): void {
 		this.onChoose(folder);
+	}
+}
+
+class ConfirmationModal extends Modal {
+	private result: boolean = false;
+	private onClose: (result: boolean) => void;
+	private message: string;
+	private detail: string;
+	private confirmText: string;
+
+	constructor(
+		app: App,
+		message: string,
+		detail: string,
+		confirmText: string,
+		onClose: (result: boolean) => void
+	) {
+		super(app);
+		this.message = message;
+		this.detail = detail;
+		this.confirmText = confirmText;
+		this.onClose = onClose;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+
+		contentEl.createEl("h2", { text: this.message });
+		contentEl.createEl("p", { text: this.detail });
+
+		const buttonContainer = contentEl.createDiv();
+		buttonContainer.addClass("modal-button-container");
+
+		buttonContainer.createEl("button", { text: "Cancel" }).addEventListener("click", () => {
+			this.result = false;
+			this.close();
+		});
+
+		const confirmButton = buttonContainer.createEl("button", {
+			text: this.confirmText,
+			cls: "mod-warning"
+		});
+		confirmButton.addEventListener("click", () => {
+			this.result = true;
+			this.close();
+		});
+	}
+
+	onClose() {
+		this.onClose(this.result);
+		this.contentEl.empty();
 	}
 }
