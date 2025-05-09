@@ -4,6 +4,7 @@ import { parse, stringify } from 'yaml';
 
 export default class FileOrganizerPlugin extends Plugin {
 	settings: FileOrganizerSettings;
+	private registeredCommands: any[] = []; // Add this line
 
 	async onload() {
 		await this.loadSettings();
@@ -79,7 +80,7 @@ export default class FileOrganizerPlugin extends Plugin {
 	private async ensureDirectory(filePath: string) {
 		const dirPath = filePath.substring(0, filePath.lastIndexOf('/'));
 		if (dirPath) {
-			await this.app.vault.createFolder(dirPath).catch(() => {});
+			await this.app.vault.createFolder(dirPath).catch(() => { });
 		}
 	}
 
@@ -114,7 +115,7 @@ export default class FileOrganizerPlugin extends Plugin {
 			});
 
 			yamlContent.tags = tags;
-			const newYaml = stringify(yamlContent);
+			const newYaml = stringify(yamlContent, (key, value) => value === null ? undefined : value);
 			const newContent = content.replace(/^---\n[\s\S]*?\n---/, `---\n${newYaml}---`);
 			await this.app.vault.modify(file, newContent);
 		}
@@ -131,18 +132,17 @@ export default class FileOrganizerPlugin extends Plugin {
 
 	registerCommands() {
 		// Clear previous commands
-		this.app.commands.commands = Object.fromEntries(
-			Object.entries(this.app.commands.commands)
-				.filter(([id]) => !id.startsWith('file-organizer:'))
-		);
+		this.registeredCommands.forEach(cmd => this.removeCommand(cmd));
+		this.registeredCommands = [];
 
 		// Register new commands
 		this.settings.commands.forEach((command) => {
-			this.addCommand({
+			const cmd = this.addCommand({
 				id: `file-organizer:${command.command}`,
 				name: command.command,
 				callback: () => this.handleCommand(command)
 			});
+			this.registeredCommands.push(cmd);
 		});
 	}
 
@@ -164,54 +164,54 @@ export default class FileOrganizerPlugin extends Plugin {
 		}).open();
 	}
 
-    async moveFileAndUpdateTags(file: TFile, targetFolder: TFolder, command: CommandConfig) {
-        console.info('moveFileAndUpdateTags', targetFolder.path, targetFolder.name);
-        // Move file to target directory
-        const newPath = `${targetFolder.path}/${file.name}`;
-        await this.app.fileManager.renameFile(file, newPath);
+	async moveFileAndUpdateTags(file: TFile, targetFolder: TFolder, command: CommandConfig) {
+		console.info('moveFileAndUpdateTags', targetFolder.path, targetFolder.name);
+		// Move file to target directory
+		const newPath = `${targetFolder.path}/${file.name}`;
+		await this.app.fileManager.renameFile(file, newPath);
 
-        // Update tags
-        const fileContent = await this.app.vault.read(file);
-        const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-        const newTag = targetFolder.path == targetFolder.name ? `${this.settings.paraTag}/${command.tag}` : `${this.settings.paraTag}/${command.tag}/${targetFolder.name}`;
+		// Update tags
+		const fileContent = await this.app.vault.read(file);
+		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		const newTag = targetFolder.path == targetFolder.name ? `${this.settings.paraTag}/${command.tag}` : `${this.settings.paraTag}/${command.tag}/${targetFolder.name}`;
 
-        let newContent;
-        if (frontmatter) {
-            // Extract frontmatter section
-            const match = fileContent.match(/^---\n([\s\S]*?)\n---/);
-            if (match) {
-                // Parse YAML
-                const yamlContent = parse(match[1]);
-                let tags = yamlContent.tags || [];
-                if (typeof tags === 'string') {
-                    tags = [tags];
-                }
+		let newContent;
+		if (frontmatter) {
+			// Extract frontmatter section
+			const match = fileContent.match(/^---\n([\s\S]*?)\n---/);
+			if (match) {
+				// Parse YAML
+				const yamlContent = parse(match[1]);
+				let tags = yamlContent.tags || [];
+				if (typeof tags === 'string') {
+					tags = [tags];
+				}
 
-                // Remove old para tags
-                tags = tags.filter((tag: string) => !tag.startsWith(this.settings.paraTag + '/'));
-                tags.push(newTag);
+				// Remove old para tags
+				tags = tags.filter((tag: string) => !tag.startsWith(this.settings.paraTag + '/'));
+				tags.push(newTag);
 
-                // Update YAML object
-                yamlContent.tags = tags;
+				// Update YAML object
+				yamlContent.tags = tags;
 
-                // Convert back to YAML string
-                const newYaml = stringify(yamlContent);
-                newContent = fileContent.replace(/^---\n[\s\S]*?\n---/, `---\n${newYaml}---`);
-            } else {
-                // Invalid frontmatter format, create new one
-                const yamlContent = { tags: [newTag] };
-                const newYaml = stringify(yamlContent);
-                newContent = `---\n${newYaml}---\n${fileContent}`;
-            }
-        } else {
-            // No frontmatter, create new one
-            const yamlContent = { tags: [newTag] };
-            const newYaml = stringify(yamlContent);
-            newContent = `---\n${newYaml}---\n${fileContent}`;
-        }
+				// Convert back to YAML string
+				const newYaml = stringify(yamlContent, (key, value) => value === null ? undefined : value);
+				newContent = fileContent.replace(/^---\n[\s\S]*?\n---/, `---\n${newYaml}---`);
+			} else {
+				// Invalid frontmatter format, create new one
+				const yamlContent = { tags: [newTag] };
+				const newYaml = stringify(yamlContent, (key, value) => value === null ? undefined : value);
+				newContent = `---\n${newYaml}---\n${fileContent}`;
+			}
+		} else {
+			// No frontmatter, create new one
+			const yamlContent = { tags: [newTag] };
+			const newYaml = stringify(yamlContent, (key, value) => value === null ? undefined : value);
+			newContent = `---\n${newYaml}---\n${fileContent}`;
+		}
 
-        await this.app.vault.modify(file, newContent);
-    }
+		await this.app.vault.modify(file, newContent);
+	}
 }
 
 class FolderSelectionModal extends FuzzySuggestModal<TFolder> {
