@@ -1,0 +1,15 @@
+name: release-obsidian-plugin
+
+permissions:
+  contents: write
+  packages: write
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  release:
+    name: release
+    uses: tenfyzhong/workflows/.github/workflows/release-obisidian-plugin.yml@feat-release-obsidian-plugin
