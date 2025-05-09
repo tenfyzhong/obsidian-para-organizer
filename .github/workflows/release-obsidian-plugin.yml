@@ -12,4 +12,4 @@ on:
 jobs:
   release:
     name: release
-    uses: tenfyzhong/workflows/.github/workflows/release-obisidian-plugin.yml@feat-release-obsidian-plugin
+    uses: tenfyzhong/workflows/.github/workflows/release-obisidian-plugin.yml@main
